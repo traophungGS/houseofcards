@@ -1,0 +1,1752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D House of Cards Builder</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & Playfair Display -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for crisp tactile icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js & OrbitControls & Cannon.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #0f172a;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+        }
+        .btn-tactile {
+            transition: all 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .btn-tactile:hover:not(:disabled) {
+            transform: translateY(-1px);
+        }
+        .btn-tactile:active:not(:disabled) {
+            transform: translateY(1px) scale(0.98);
+        }
+        .btn-active {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+        }
+        .btn-physics-active {
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 16px rgba(239, 68, 68, 0.45);
+        }
+        /* Custom scrollbar for small screens */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="text-slate-100">
+
+    <!-- 3D Viewport Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Top Header & Telemetry Bar -->
+    <header class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        <!-- Brand & Mode Toggle -->
+        <div class="glass-panel rounded-2xl px-4 py-2.5 flex items-center gap-3 pointer-events-auto">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-bold shadow-md">
+                <i class="fa-solid fa-diamond text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-sm sm:text-base font-bold tracking-tight text-white leading-none" style="font-family: 'Playfair Display', serif;">
+                    House of Cards <span class="text-amber-400">3D</span>
+                </h1>
+                <p id="mode-subtitle" class="text-[11px] text-slate-300 mt-0.5">Architectural Snap Builder</p>
+            </div>
+
+            <div class="h-6 w-px bg-white/15 mx-1"></div>
+
+            <!-- Primary Mode Switch: BUILD vs KNOCK IT DOWN -->
+            <div class="flex bg-slate-900/90 p-1 rounded-xl border border-white/10">
+                <button id="btn-mode-build" class="btn-tactile btn-active px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5">
+                    <i class="fa-solid fa-layer-group"></i>
+                    <span>Build</span>
+                </button>
+                <button id="btn-mode-physics" class="btn-tactile px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1.5">
+                    <i class="fa-solid fa-burst text-rose-400"></i>
+                    <span>Knock It Down!</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats & Utility Controls -->
+        <div class="glass-panel rounded-2xl px-3.5 py-2 flex items-center gap-3 sm:gap-4 pointer-events-auto">
+            <!-- Telemetry -->
+            <div class="flex items-center gap-3 text-xs">
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Cards</span>
+                    <span id="stat-cards" class="font-bold text-sm text-amber-400 tabular-nums">0</span>
+                </div>
+                <div class="h-5 w-px bg-white/10"></div>
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Stories</span>
+                    <span id="stat-stories" class="font-bold text-sm text-emerald-400 tabular-nums">0</span>
+                </div>
+            </div>
+
+            <div class="h-6 w-px bg-white/15"></div>
+
+            <!-- Undo / Redo / Clear / Table Surface / Mute -->
+            <div class="flex items-center gap-1.5">
+                <button id="btn-undo" title="Undo (Ctrl+Z)" class="btn-tactile w-8 h-8 rounded-xl bg-white/5 hover:bg-white/15 disabled:opacity-35 flex items-center justify-center text-xs border border-white/10">
+                    <i class="fa-solid fa-rotate-left"></i>
+                </button>
+                <button id="btn-redo" title="Redo (Ctrl+Y)" class="btn-tactile w-8 h-8 rounded-xl bg-white/5 hover:bg-white/15 disabled:opacity-35 flex items-center justify-center text-xs border border-white/10">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+                <button id="btn-table-theme" title="Switch Table Surface (Emerald Felt / Walnut Wood)" class="btn-tactile w-8 h-8 rounded-xl bg-white/5 hover:bg-white/15 flex items-center justify-center text-xs border border-white/10 text-emerald-400">
+                    <i class="fa-solid fa-chess-board"></i>
+                </button>
+                <button id="btn-mute" title="Toggle Sound Effects" class="btn-tactile w-8 h-8 rounded-xl bg-white/5 hover:bg-white/15 flex items-center justify-center text-xs border border-white/10 text-amber-300">
+                    <i id="icon-mute" class="fa-solid fa-volume-high"></i>
+                </button>
+                <button id="btn-clear" title="Clear Table" class="btn-tactile px-2.5 h-8 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-medium flex items-center gap-1.5">
+                    <i class="fa-solid fa-trash-can"></i>
+                    <span class="hidden md:inline">Clear</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Left Floating Panel: Presets & Card Selector -->
+    <aside class="fixed left-3 top-20 z-20 flex flex-col gap-2.5 pointer-events-none max-w-[230px]">
+        <!-- Quick Presets -->
+        <div class="glass-panel rounded-2xl p-3 pointer-events-auto">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i> Quick Presets
+                </span>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <button data-preset="2" class="preset-btn btn-tactile w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-xs font-medium flex items-center justify-between">
+                    <span>2-Story Pyramid</span>
+                    <span class="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">7 cards</span>
+                </button>
+                <button data-preset="3" class="preset-btn btn-tactile w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-xs font-medium flex items-center justify-between">
+                    <span>3-Story Pyramid</span>
+                    <span class="text-[10px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">15 cards</span>
+                </button>
+                <button data-preset="4" class="preset-btn btn-tactile w-full text-left px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-xs font-medium flex items-center justify-between">
+                    <span>Grand 4-Story Palace</span>
+                    <span class="text-[10px] text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded">26 cards</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Card Face & Back Style Selector (Visible in Build Mode) -->
+        <div id="panel-card-style" class="glass-panel rounded-2xl p-3 pointer-events-auto hidden sm:block">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-300 block mb-2">
+                <i class="fa-solid fa-cards text-amber-400 mr-1"></i> Deck & Orientation
+            </span>
+            <div class="grid grid-cols-2 gap-1.5 mb-2">
+                <select id="select-suit" class="bg-slate-900/90 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400">
+                    <option value="RANDOM">Random Card</option>
+                    <option value="S">♠ Spades</option>
+                    <option value="H">♥ Hearts</option>
+                    <option value="D">♦ Diamonds</option>
+                    <option value="C">♣ Clubs</option>
+                </select>
+                <select id="select-rank" class="bg-slate-900/90 border border-white/15 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-amber-400" disabled>
+                    <option value="A">Ace</option>
+                    <option value="K">King</option>
+                    <option value="Q">Queen</option>
+                    <option value="J">Jack</option>
+                    <option value="10">10</option>
+                    <option value="7">7</option>
+                </select>
+            </div>
+            <div class="flex items-center justify-between gap-1.5">
+                <span class="text-[11px] text-slate-400">Back:</span>
+                <div class="flex gap-1.5">
+                    <button data-back="crimson" class="back-btn w-5 h-5 rounded-full bg-red-700 ring-2 ring-amber-400 border border-white/40" title="Royal Crimson Back"></button>
+                    <button data-back="navy" class="back-btn w-5 h-5 rounded-full bg-blue-800 border border-white/40" title="Midnight Navy Back"></button>
+                    <button data-back="gold" class="back-btn w-5 h-5 rounded-full bg-amber-600 border border-white/40" title="Imperial Gold Back"></button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Toast Notification Banner -->
+    <div id="toast-banner" class="fixed top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none opacity-0 transition-opacity duration-200">
+        <div class="glass-panel px-4 py-2 rounded-full text-xs font-medium text-amber-300 border border-amber-400/30 shadow-lg flex items-center gap-2">
+            <i class="fa-solid fa-circle-info"></i>
+            <span id="toast-text">Ready to build</span>
+        </div>
+    </div>
+
+    <!-- Bottom Contextual Action Bar -->
+    <footer class="fixed bottom-4 left-3 right-3 z-20 flex flex-col items-center gap-2 pointer-events-none">
+        
+        <!-- BUILD MODE TOOLBAR -->
+        <div id="toolbar-build" class="glass-panel rounded-2xl p-2 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 pointer-events-auto">
+            <button data-tool="smart" class="tool-btn btn-tactile btn-active px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 border border-transparent">
+                <i class="fa-solid fa-wand-sparkles"></i>
+                <span>Smart Snap</span>
+            </button>
+            <button data-tool="aframe" class="tool-btn btn-tactile px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 text-xs font-medium flex items-center gap-2 border border-white/10">
+                <i class="fa-solid fa-caret-up text-amber-400 text-sm"></i>
+                <span>A-Frame Pair</span>
+            </button>
+            <button data-tool="bridge" class="tool-btn btn-tactile px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 text-xs font-medium flex items-center gap-2 border border-white/10">
+                <i class="fa-solid fa-minus text-emerald-400"></i>
+                <span>Flat Bridge</span>
+            </button>
+            <button data-tool="single" class="tool-btn btn-tactile px-3 py-2 rounded-xl bg-white/5 hover:bg-white/15 text-xs font-medium flex items-center gap-2 border border-white/10">
+                <i class="fa-solid fa-note-sticky text-sky-400"></i>
+                <span>Single Card</span>
+            </button>
+
+            <div class="h-6 w-px bg-white/15 mx-0.5"></div>
+
+            <!-- Rotate Button -->
+            <button id="btn-rotate" class="btn-tactile px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium flex items-center gap-1.5 border border-white/15 text-amber-300">
+                <i class="fa-solid fa-rotate"></i>
+                <span>Rotate (<span id="label-angle">0°</span>)</span>
+            </button>
+
+            <!-- Lean Angle Slider (Only visible in Single Card mode) -->
+            <div id="single-tilt-control" class="hidden items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900/80 border border-white/10">
+                <span class="text-[11px] text-slate-300">Tilt:</span>
+                <input id="input-tilt" type="range" min="-75" max="75" value="18" class="w-20 accent-amber-400 cursor-pointer">
+                <span id="label-tilt" class="text-[11px] font-mono text-amber-300 w-7">18°</span>
+            </div>
+        </div>
+
+        <!-- PHYSICS / COLLAPSE MODE TOOLBAR -->
+        <div id="toolbar-physics" class="hidden glass-panel rounded-2xl p-2 flex flex-wrap items-center justify-center gap-2 pointer-events-auto border-rose-500/30">
+            <button id="btn-shoot-marble" class="btn-tactile px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white text-xs font-semibold flex items-center gap-2 shadow-md">
+                <i class="fa-solid fa-bowling-ball"></i>
+                <span>Flick Marble (Space)</span>
+            </button>
+            <button id="btn-wind-gust" class="btn-tactile px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white text-xs font-semibold flex items-center gap-2 shadow-md">
+                <i class="fa-solid fa-wind"></i>
+                <span>Gust of Wind</span>
+            </button>
+            <button id="btn-pull-card-mode" class="btn-tactile px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 text-xs font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-hand-pointer"></i>
+                <span>Click Any Card to Yank It!</span>
+            </button>
+
+            <div class="h-6 w-px bg-white/15 mx-0.5"></div>
+
+            <button id="btn-reset-tower" class="btn-tactile px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+                <span>Rebuild Tower</span>
+            </button>
+        </div>
+
+        <!-- Subtle Keyboard Shortcuts Hint -->
+        <div class="text-[11px] text-slate-300/85 bg-slate-950/60 backdrop-blur-md px-3.5 py-1 rounded-full border border-white/10 hidden sm:flex items-center gap-3">
+            <span><strong class="text-amber-400">Left Click:</strong> Place / Yank Card</span>
+            <span>•</span>
+            <span><strong class="text-amber-400">Right Drag / 2-Finger:</strong> Orbit Camera</span>
+            <span>•</span>
+            <span><strong class="text-amber-400">Scroll:</strong> Zoom</span>
+            <span>•</span>
+            <span><strong class="text-amber-400">R:</strong> Rotate 90°</span>
+            <span>•</span>
+            <span><strong class="text-amber-400">Space:</strong> Flick Marble</span>
+        </div>
+    </footer>
+
+    <script>
+    /**
+     * ============================================================================
+     * 3D HOUSE OF CARDS BUILDER - CORE ENGINE
+     * ============================================================================
+     * Architecture:
+     * 1. SoundEngine: Synthesized Web Audio API foley (crisp card snap, paper slide,
+     *    wind whoosh, marble impact, and multi-card clatter).
+     * 2. CardTextureFactory: High-DPI procedural HTML5 Canvas generator for all 52
+     *    playing card faces (pips, indices, ornate court frames) & 3 filigree backs.
+     * 3. ArchitecturalGeometry: Exact mathematical dimensions for A-Frames (isosceles
+     *    triangles) and horizontal bridge cards so multi-story towers stack flush
+     *    with zero z-fighting or floating gaps.
+     * 4. Three.js Scene & Smart Snapping Raycaster: Detects table surface, flat
+     *    bridge decks, and adjacent A-Frame apex pairs for effortless building.
+     * 5. Cannon.js Rigid-Body Physics Simulation: Converts placed cards into dynamic
+     *    rigid bodies with realistic friction, restitution, marble projectiles,
+     *    wind impulses, and individual card yanking—plus instant snapshot restore.
+     */
+
+    // ============================================================================
+    // 1. SYNTHESIZED WEB AUDIO ENGINE
+    // ============================================================================
+    class SoundEngine {
+        constructor() {
+            this.ctx = null;
+            this.muted = false;
+        }
+
+        init() {
+            if (!this.ctx) {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtx) this.ctx = new AudioCtx();
+            }
+            if (this.ctx && this.ctx.state === 'suspended') {
+                this.ctx.resume();
+            }
+        }
+
+        toggleMute() {
+            this.muted = !this.muted;
+            return this.muted;
+        }
+
+        playCardSnap(pitchOffset = 0) {
+            if (this.muted) return;
+            this.init();
+            if (!this.ctx) return;
+
+            const now = this.ctx.currentTime;
+            // Crisp cardstock tap (filtered noise burst + subtle resonant thud)
+            const bufferSize = this.ctx.sampleRate * 0.045;
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.28));
+            }
+
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(1600 + pitchOffset * 200, now);
+            filter.Q.value = 1.8;
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.32, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            noise.start(now);
+        }
+
+        playCardClatter(intensity = 0.5) {
+            if (this.muted) return;
+            this.init();
+            if (!this.ctx) return;
+
+            const now = this.ctx.currentTime;
+            const bufferSize = this.ctx.sampleRate * 0.06;
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.35));
+            }
+
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'highpass';
+            filter.frequency.value = 900 + Math.random() * 900;
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(Math.min(0.25, intensity * 0.25), now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            noise.start(now);
+        }
+
+        playMarbleLaunch() {
+            if (this.muted) return;
+            this.init();
+            if (!this.ctx) return;
+
+            const now = this.ctx.currentTime;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(220, now);
+            osc.frequency.exponentialRampToValueAtTime(640, now + 0.12);
+
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.14);
+        }
+
+        playWindGust() {
+            if (this.muted) return;
+            this.init();
+            if (!this.ctx) return;
+
+            const now = this.ctx.currentTime;
+            const bufferSize = this.ctx.sampleRate * 0.7;
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.setValueAtTime(260, now);
+            filter.frequency.exponentialRampToValueAtTime(620, now + 0.3);
+            filter.frequency.exponentialRampToValueAtTime(180, now + 0.7);
+            filter.Q.value = 3.0;
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.001, now);
+            gain.gain.linearRampToValueAtTime(0.28, now + 0.22);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            noise.start(now);
+        }
+    }
+
+    const sound = new SoundEngine();
+
+    // ============================================================================
+    // 2. PROCEDURAL PLAYING CARD TEXTURE FACTORY
+    // ============================================================================
+    class CardTextureFactory {
+        constructor() {
+            this.faceCache = new Map();
+            this.backCache = new Map();
+            this.suits = ['S', 'H', 'D', 'C'];
+            this.ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+        }
+
+        getRandomCardSpec() {
+            const suit = this.suits[Math.floor(Math.random() * this.suits.length)];
+            const rank = this.ranks[Math.floor(Math.random() * this.ranks.length)];
+            return { suit, rank };
+        }
+
+        getSuitSymbol(suit) {
+            switch (suit) {
+                case 'S': return '♠';
+                case 'H': return '♥';
+                case 'D': return '♦';
+                case 'C': return '♣';
+                default: return '♠';
+            }
+        }
+
+        isRedSuit(suit) {
+            return suit === 'H' || suit === 'D';
+        }
+
+        roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x + w, y, x + w, y + h, r);
+            ctx.arcTo(x + w, y + h, x, y + h, r);
+            ctx.arcTo(x, y + h, x, y, r);
+            ctx.arcTo(x, y, x + w, y, r);
+            ctx.closePath();
+        }
+
+        getFaceTexture(suit, rank) {
+            const key = `${rank}_${suit}`;
+            if (this.faceCache.has(key)) return this.faceCache.get(key);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 768;
+            const ctx = canvas.getContext('2d');
+
+            // Ivory linen cardstock background
+            ctx.fillStyle = '#fcfbf7';
+            ctx.fillRect(0, 0, 512, 768);
+
+            // Subtle outer card border
+            ctx.strokeStyle = '#d6d3cb';
+            ctx.lineWidth = 6;
+            this.roundRect(ctx, 8, 8, 496, 752, 26);
+            ctx.stroke();
+
+            const color = this.isRedSuit(suit) ? '#c81e1e' : '#18181b';
+            const symbol = this.getSuitSymbol(suit);
+            ctx.fillStyle = color;
+            ctx.strokeStyle = color;
+
+            // Top-Left Corner Index
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.font = 'bold 58px "Playfair Display", Georgia, serif';
+            ctx.fillText(rank, 54, 34);
+            ctx.font = '48px Arial, sans-serif';
+            ctx.fillText(symbol, 54, 98);
+
+            // Bottom-Right Corner Index (Inverted)
+            ctx.save();
+            ctx.translate(512 - 54, 768 - 34);
+            ctx.rotate(Math.PI);
+            ctx.font = 'bold 58px "Playfair Display", Georgia, serif';
+            ctx.fillText(rank, 0, 0);
+            ctx.font = '48px Arial, sans-serif';
+            ctx.fillText(symbol, 0, 64);
+            ctx.restore();
+
+            // Center Artwork
+            const isCourt = ['J', 'Q', 'K'].includes(rank);
+            if (isCourt) {
+                // Ornate Royal Court Frame
+                ctx.lineWidth = 4;
+                this.roundRect(ctx, 108, 120, 296, 528, 14);
+                ctx.stroke();
+
+                ctx.fillStyle = this.isRedSuit(suit) ? 'rgba(200, 30, 30, 0.07)' : 'rgba(24, 24, 27, 0.06)';
+                ctx.fill();
+
+                // Decorative Gold Inner Filigree
+                ctx.strokeStyle = '#b45309';
+                ctx.lineWidth = 2;
+                this.roundRect(ctx, 118, 130, 276, 508, 10);
+                ctx.stroke();
+
+                // Crown emblem & large court initial
+                ctx.fillStyle = '#d97706';
+                ctx.font = '56px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('♛', 256, 220);
+
+                ctx.fillStyle = color;
+                ctx.font = 'bold 148px "Playfair Display", Georgia, serif';
+                ctx.fillText(rank, 256, 384);
+
+                ctx.font = '88px Arial, sans-serif';
+                ctx.fillText(symbol, 256, 525);
+            } else if (rank === 'A') {
+                // Grand Ace Pip
+                ctx.font = suit === 'S' ? '220px Arial, sans-serif' : '195px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(symbol, 256, 384);
+
+                if (suit === 'S') {
+                    ctx.strokeStyle = '#b45309';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(256, 384, 135, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+            } else {
+                // Number Cards Pip Layouts
+                const num = parseInt(rank, 10);
+                const pipLayouts = {
+                    2: [[0.5, 0.24], [0.5, 0.76]],
+                    3: [[0.5, 0.22], [0.5, 0.5], [0.5, 0.78]],
+                    4: [[0.34, 0.24], [0.66, 0.24], [0.34, 0.76], [0.66, 0.76]],
+                    5: [[0.34, 0.24], [0.66, 0.24], [0.5, 0.5], [0.34, 0.76], [0.66, 0.76]],
+                    6: [[0.34, 0.24], [0.66, 0.24], [0.34, 0.5], [0.66, 0.5], [0.34, 0.76], [0.66, 0.76]],
+                    7: [[0.34, 0.24], [0.66, 0.24], [0.5, 0.37], [0.34, 0.5], [0.66, 0.5], [0.34, 0.76], [0.66, 0.76]],
+                    8: [[0.34, 0.24], [0.66, 0.24], [0.5, 0.37], [0.34, 0.5], [0.66, 0.5], [0.5, 0.63], [0.34, 0.76], [0.66, 0.76]],
+                    9: [[0.34, 0.22], [0.66, 0.22], [0.34, 0.41], [0.66, 0.41], [0.5, 0.5], [0.34, 0.59], [0.66, 0.59], [0.34, 0.78], [0.66, 0.78]],
+                    10: [[0.34, 0.22], [0.66, 0.22], [0.5, 0.31], [0.34, 0.41], [0.66, 0.41], [0.34, 0.59], [0.66, 0.59], [0.5, 0.69], [0.34, 0.78], [0.66, 0.78]]
+                };
+
+                const coords = pipLayouts[num] || [[0.5, 0.5]];
+                ctx.font = '74px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                coords.forEach(([nx, ny]) => {
+                    ctx.save();
+                    ctx.translate(nx * 512, ny * 768);
+                    if (ny > 0.55) ctx.rotate(Math.PI);
+                    ctx.fillText(symbol, 0, 0);
+                    ctx.restore();
+                });
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.anisotropy = 8;
+            this.faceCache.set(key, texture);
+            return texture;
+        }
+
+        getBackTexture(theme = 'crimson') {
+            if (this.backCache.has(theme)) return this.backCache.get(theme);
+
+            const palettes = {
+                crimson: { primary: '#881337', secondary: '#be123c', accent: '#fbbf24' },
+                navy:    { primary: '#1e3a8a', secondary: '#1d4ed8', accent: '#38bdf8' },
+                gold:    { primary: '#78350f', secondary: '#b45309', accent: '#fde68a' }
+            };
+            const pal = palettes[theme] || palettes.crimson;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 768;
+            const ctx = canvas.getContext('2d');
+
+            // White crisp border margin
+            ctx.fillStyle = '#fcfbf7';
+            ctx.fillRect(0, 0, 512, 768);
+
+            // Inner colored panel
+            ctx.fillStyle = pal.primary;
+            this.roundRect(ctx, 26, 26, 460, 716, 18);
+            ctx.fill();
+
+            // Geometric lattice pattern
+            ctx.save();
+            this.roundRect(ctx, 38, 38, 436, 692, 12);
+            ctx.clip();
+
+            ctx.strokeStyle = pal.secondary;
+            ctx.lineWidth = 3;
+            const step = 28;
+            for (let x = -400; x < 900; x += step) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x + 768, 768);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(x + 768, 0);
+                ctx.lineTo(x, 768);
+                ctx.stroke();
+            }
+
+            // Gold filigree border & center medallion
+            ctx.strokeStyle = pal.accent;
+            ctx.lineWidth = 5;
+            this.roundRect(ctx, 44, 44, 424, 680, 10);
+            ctx.stroke();
+
+            ctx.fillStyle = pal.primary;
+            ctx.beginPath();
+            ctx.arc(256, 384, 88, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = pal.accent;
+            ctx.font = '72px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('❖', 256, 384);
+            ctx.restore();
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.anisotropy = 8;
+            this.backCache.set(theme, texture);
+            return texture;
+        }
+    }
+
+    const textureFactory = new CardTextureFactory();
+
+    // ============================================================================
+    // 3. ARCHITECTURAL GEOMETRY CONSTANTS (PRECISION STACKING MATH)
+    // ============================================================================
+    const CARD_WIDTH = 1.25;      // X dimension of upright card
+    const CARD_HEIGHT = 1.85;     // Y length of card
+    const CARD_THICKNESS = 0.018; // Z thickness of cardstock
+
+    // A-Frame lean angle from vertical (22 degrees gives ideal structural stance)
+    const AFRAME_LEAN_RAD = THREE.MathUtils.degToRad(22);
+    const AFRAME_HALF_SPAN = (CARD_HEIGHT / 2) * Math.sin(AFRAME_LEAN_RAD); // ~0.3465
+    const AFRAME_HEIGHT = CARD_HEIGHT * Math.cos(AFRAME_LEAN_RAD);          // ~1.7153
+    // Bay pitch: distance between adjacent A-frame centers so a 1.85 bridge spans two apexes cleanly
+    const BAY_SPACING = 1.48;
+
+    // ============================================================================
+    // 4. APPLICATION STATE
+    // ============================================================================
+    const state = {
+        mode: 'build',           // 'build' | 'physics'
+        tool: 'smart',           // 'smart' | 'aframe' | 'bridge' | 'single'
+        yawDeg: 0,               // 0, 90, 180, 270
+        singleTiltDeg: 18,       // Tilt angle for single card tool
+        backTheme: 'crimson',    // 'crimson' | 'navy' | 'gold'
+        suitChoice: 'RANDOM',    // 'RANDOM' | 'S' | 'H' | 'D' | 'C'
+        rankChoice: 'A',
+        tableTheme: 'felt',      // 'felt' | 'wood'
+        cards: [],               // Array of placed card data objects
+        undoStack: [],
+        redoStack: [],
+        snapshotBeforePhysics: null,
+        selectedPhysicsCardId: null
+    };
+
+    // ============================================================================
+    // 5. THREE.JS SCENE, CAMERA, LIGHTING & TABLE SETUP
+    // ============================================================================
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#0c1322');
+    scene.fog = new THREE.FogExp2('#0c1322', 0.022);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 150);
+    camera.position.set(0, 6.2, 10.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.065;
+    controls.maxPolarAngle = Math.PI / 2 - 0.03; // Prevent clipping under table
+    controls.minDistance = 2.5;
+    controls.maxDistance = 26;
+    controls.target.set(0, 1.8, 0);
+
+    // Three-Point Studio Lighting + Warm Overhead Lamp
+    const hemiLight = new THREE.HemisphereLight('#f8fafc', '#1e293b', 0.55);
+    scene.add(hemiLight);
+
+    const mainSpot = new THREE.SpotLight('#fff7ed', 1.35);
+    mainSpot.position.set(6, 15, 8);
+    mainSpot.angle = Math.PI / 4;
+    mainSpot.penumbra = 0.45;
+    mainSpot.decay = 1.2;
+    mainSpot.distance = 45;
+    mainSpot.castShadow = true;
+    mainSpot.shadow.mapSize.width = 2048;
+    mainSpot.shadow.mapSize.height = 2048;
+    mainSpot.shadow.camera.near = 2;
+    mainSpot.shadow.camera.far = 35;
+    mainSpot.shadow.bias = -0.0005;
+    scene.add(mainSpot);
+
+    const rimLight = new THREE.DirectionalLight('#93c5fd', 0.45);
+    rimLight.position.set(-8, 7, -9);
+    scene.add(rimLight);
+
+    // Procedural Table Textures (Baize Felt & Rich Walnut Wood)
+    function createTableMaterial(type) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        if (type === 'felt') {
+            ctx.fillStyle = '#0f5132';
+            ctx.fillRect(0, 0, 512, 512);
+            // Subtle woven baize texture
+            for (let i = 0; i < 18000; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.06)';
+                ctx.fillRect(x, y, 2, 2);
+            }
+        } else {
+            ctx.fillStyle = '#4a2c18';
+            ctx.fillRect(0, 0, 512, 512);
+            // Wood grain streaks
+            for (let y = 0; y < 512; y += 2) {
+                const wave = Math.sin(y * 0.04) * 12;
+                ctx.fillStyle = y % 6 === 0 ? 'rgba(24, 12, 5, 0.22)' : 'rgba(120, 72, 40, 0.14)';
+                ctx.fillRect(0, y, 512, 2 + (wave % 2));
+            }
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(8, 8);
+        tex.anisotropy = 8;
+
+        return new THREE.MeshStandardMaterial({
+            map: tex,
+            roughness: type === 'felt' ? 0.88 : 0.36,
+            metalness: type === 'felt' ? 0.02 : 0.08
+        });
+    }
+
+    const tableGroup = new THREE.Group();
+    scene.add(tableGroup);
+
+    const tableTopGeo = new THREE.CylinderGeometry(13.5, 13.5, 0.4, 64);
+    const tableTopMat = createTableMaterial('felt');
+    const tableMesh = new THREE.Mesh(tableTopGeo, tableTopMat);
+    tableMesh.position.y = -0.2;
+    tableMesh.receiveShadow = true;
+    tableMesh.name = 'TABLE_SURFACE';
+    tableGroup.add(tableMesh);
+
+    // Mahogany Wooden Rim around the Table
+    const rimGeo = new THREE.TorusGeometry(13.5, 0.35, 16, 72);
+    rimGeo.rotateX(Math.PI / 2);
+    const rimMat = new THREE.MeshStandardMaterial({ color: '#2b170a', roughness: 0.3, metalness: 0.1 });
+    const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+    rimMesh.position.y = -0.05;
+    rimMesh.receiveShadow = true;
+    tableGroup.add(rimMesh);
+
+    // Subtle Grid Helper on Table for easy alignment
+    const gridHelper = new THREE.GridHelper(18, 24, 0xffffff, 0xffffff);
+    gridHelper.position.y = 0.002;
+    gridHelper.material.opacity = 0.06;
+    gridHelper.material.transparent = true;
+    tableGroup.add(gridHelper);
+
+    // ============================================================================
+    // 6. CARD MESH CREATION & MANAGEMENT
+    // ============================================================================
+    const cardGeometry = new THREE.BoxGeometry(CARD_WIDTH, CARD_HEIGHT, CARD_THICKNESS);
+    const edgeMaterial = new THREE.MeshStandardMaterial({ color: '#f1efe9', roughness: 0.7 });
+
+    const placedCardsGroup = new THREE.Group();
+    scene.add(placedCardsGroup);
+
+    // Map cardId -> THREE.Mesh
+    const cardMeshes = new Map();
+
+    function getCardSpecFromUI() {
+        if (state.suitChoice === 'RANDOM') {
+            return textureFactory.getRandomCardSpec();
+        }
+        return { suit: state.suitChoice, rank: state.rankChoice };
+    }
+
+    function createCardMesh(cardData) {
+        const faceTex = textureFactory.getFaceTexture(cardData.suit, cardData.rank);
+        const backTex = textureFactory.getBackTexture(cardData.backTheme || state.backTheme);
+
+        const faceMat = new THREE.MeshStandardMaterial({
+            map: faceTex,
+            roughness: 0.38,
+            metalness: 0.04
+        });
+        const backMat = new THREE.MeshStandardMaterial({
+            map: backTex,
+            roughness: 0.42,
+            metalness: 0.06
+        });
+
+        // BoxGeometry face order: +x, -x, +y, -y, +z (front), -z (back)
+        const materials = [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, faceMat, backMat];
+        const mesh = new THREE.Mesh(cardGeometry, materials);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        mesh.position.set(cardData.pos.x, cardData.pos.y, cardData.pos.z);
+        mesh.quaternion.set(cardData.quat.x, cardData.quat.y, cardData.quat.z, cardData.quat.w);
+        mesh.userData = { cardId: cardData.id, type: cardData.type };
+
+        // Gentle spring-wobble animation state on placement
+        mesh.userData.spawnTime = performance.now();
+        mesh.userData.baseQuat = mesh.quaternion.clone();
+
+        return mesh;
+    }
+
+    function syncSceneFromCards() {
+        // Remove stale meshes
+        const activeIds = new Set(state.cards.map(c => c.id));
+        for (const [id, mesh] of cardMeshes.entries()) {
+            if (!activeIds.has(id)) {
+                placedCardsGroup.remove(mesh);
+                cardMeshes.delete(id);
+            }
+        }
+
+        // Add or update meshes
+        for (const card of state.cards) {
+            let mesh = cardMeshes.get(card.id);
+            if (!mesh) {
+                mesh = createCardMesh(card);
+                placedCardsGroup.add(mesh);
+                cardMeshes.set(card.id, mesh);
+            } else {
+                mesh.position.set(card.pos.x, card.pos.y, card.pos.z);
+                mesh.quaternion.set(card.quat.x, card.quat.y, card.quat.z, card.quat.w);
+                mesh.userData.baseQuat = mesh.quaternion.clone();
+            }
+        }
+        updateTelemetry();
+    }
+
+    function updateTelemetry() {
+        document.getElementById('stat-cards').textContent = state.cards.length;
+        // Estimate story height based on highest card Y
+        let maxY = 0;
+        for (const c of state.cards) {
+            if (c.pos.y > maxY) maxY = c.pos.y;
+        }
+        const stories = state.cards.length === 0 ? 0 : Math.max(1, Math.round(maxY / AFRAME_HEIGHT));
+        document.getElementById('stat-stories').textContent = stories;
+
+        document.getElementById('btn-undo').disabled = state.undoStack.length === 0 || state.mode !== 'build';
+        document.getElementById('btn-redo').disabled = state.redoStack.length === 0 || state.mode !== 'build';
+    }
+
+    // ============================================================================
+    // 7. GHOST PREVIEW SYSTEM & SMART ARCHITECTURAL SNAPPING
+    // ============================================================================
+    const ghostGroup = new THREE.Group();
+    scene.add(ghostGroup);
+
+    const ghostMaterial = new THREE.MeshStandardMaterial({
+        color: '#38bdf8',
+        transparent: true,
+        opacity: 0.45,
+        roughness: 0.2,
+        depthWrite: false
+    });
+
+    // Pool of up to 2 ghost card meshes (for A-frame pairs or single cards)
+    const ghostMeshes = [
+        new THREE.Mesh(cardGeometry, ghostMaterial),
+        new THREE.Mesh(cardGeometry, ghostMaterial)
+    ];
+    ghostMeshes.forEach(m => {
+        m.visible = false;
+        ghostGroup.add(m);
+    });
+
+    let currentGhostSpecs = []; // Specs ready to be stamped on click
+
+    function computeAFrameCards(centerPos, yawRad) {
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad);
+
+        // Left card leans +Z (inward toward apex)
+        const localPosL = new THREE.Vector3(0, AFRAME_HEIGHT / 2, -AFRAME_HALF_SPAN);
+        localPosL.applyQuaternion(qYaw).add(centerPos);
+        const qTiltL = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), AFRAME_LEAN_RAD);
+        const quatL = qYaw.clone().multiply(qTiltL);
+
+        // Right card leans -Z (inward toward apex)
+        const localPosR = new THREE.Vector3(0, AFRAME_HEIGHT / 2, AFRAME_HALF_SPAN);
+        localPosR.applyQuaternion(qYaw).add(centerPos);
+        const qTiltR = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -AFRAME_LEAN_RAD);
+        const quatR = qYaw.clone().multiply(qTiltR);
+
+        const apexPos = new THREE.Vector3(0, AFRAME_HEIGHT, 0).applyQuaternion(qYaw).add(centerPos);
+
+        return [
+            {
+                type: 'aframe_leg',
+                pos: { x: localPosL.x, y: localPosL.y, z: localPosL.z },
+                quat: { x: quatL.x, y: quatL.y, z: quatL.z, w: quatL.w },
+                apex: { x: apexPos.x, y: apexPos.y, z: apexPos.z },
+                yawRad
+            },
+            {
+                type: 'aframe_leg',
+                pos: { x: localPosR.x, y: localPosR.y, z: localPosR.z },
+                quat: { x: quatR.x, y: quatR.y, z: quatR.z, w: quatR.w },
+                apex: { x: apexPos.x, y: apexPos.y, z: apexPos.z },
+                yawRad
+            }
+        ];
+    }
+
+    function computeBridgeCard(centerPos, yawRad) {
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad);
+        const qFlat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+        const quat = qYaw.clone().multiply(qFlat);
+
+        return [
+            {
+                type: 'bridge',
+                pos: { x: centerPos.x, y: centerPos.y + CARD_THICKNESS / 2, z: centerPos.z },
+                quat: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
+                yawRad
+            }
+        ];
+    }
+
+    function computeSingleCard(hitPoint, yawRad, tiltDeg) {
+        const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
+        const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawRad);
+        const qTilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), tiltRad);
+        const quat = qYaw.clone().multiply(qTilt);
+
+        // Calculate bottom-edge contact height so the card rests cleanly on surface
+        const halfVert = Math.abs(Math.cos(tiltRad)) * (CARD_HEIGHT / 2) + Math.abs(Math.sin(tiltRad)) * (CARD_THICKNESS / 2);
+
+        return [
+            {
+                type: 'single',
+                pos: { x: hitPoint.x, y: hitPoint.y + halfVert, z: hitPoint.z },
+                quat: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
+                yawRad
+            }
+        ];
+    }
+
+    // Extract unique A-Frame apex points from placed cards
+    function getExistingApexes() {
+        const apexes = [];
+        for (const c of state.cards) {
+            if (c.type === 'aframe_leg' && c.apex) {
+                // Deduplicate pairs sharing the same apex
+                const exists = apexes.some(a =>
+                    Math.abs(a.x - c.apex.x) < 0.05 &&
+                    Math.abs(a.y - c.apex.y) < 0.05 &&
+                    Math.abs(a.z - c.apex.z) < 0.05
+                );
+                if (!exists) {
+                    apexes.push({ x: c.apex.x, y: c.apex.y, z: c.apex.z, yawRad: c.yawRad || 0 });
+                }
+            }
+        }
+        return apexes;
+    }
+
+    // Find midpoint between two adjacent apexes near cursor for automatic bridge snapping
+    function findBridgeSnapCandidate(point) {
+        const apexes = getExistingApexes();
+        let bestMid = null;
+        let bestDist = 1.15; // Generous snap radius
+
+        for (let i = 0; i < apexes.length; i++) {
+            for (let j = i + 1; j < apexes.length; j++) {
+                const a = apexes[i];
+                const b = apexes[j];
+                // Must be on same story level
+                if (Math.abs(a.y - b.y) > 0.08) continue;
+
+                const dx = b.x - a.x;
+                const dz = b.z - a.z;
+                const span = Math.hypot(dx, dz);
+
+                // Adjacent A-frames are roughly 1.1 to 1.85 units apart
+                if (span >= 0.95 && span <= 1.95) {
+                    const mid = new THREE.Vector3((a.x + b.x) / 2, a.y, (a.z + b.z) / 2);
+                    const distToCursor = mid.distanceTo(point);
+                    if (distToCursor < bestDist) {
+                        bestDist = distToCursor;
+                        // Align bridge length along the vector connecting the two apexes
+                        const bridgeYaw = Math.atan2(dx, dz);
+                        bestMid = { pos: mid, yawRad: bridgeYaw };
+                    }
+                }
+            }
+        }
+        return bestMid;
+    }
+
+    // Raycasting for Ghost Preview
+    const raycaster = new THREE.Raycaster();
+    const pointerNDC = new THREE.Vector2(-99, -99);
+
+    function updateGhostPreview() {
+        if (state.mode !== 'build') {
+            ghostMeshes.forEach(m => (m.visible = false));
+            currentGhostSpecs = [];
+            return;
+        }
+
+        raycaster.setFromCamera(pointerNDC, camera);
+
+        // Intersect with table and existing flat bridge decks
+        const targets = [tableMesh];
+        for (const c of state.cards) {
+            if (c.type === 'bridge') {
+                const m = cardMeshes.get(c.id);
+                if (m) targets.push(m);
+            }
+        }
+
+        const hits = raycaster.intersectObjects(targets, false);
+        if (hits.length === 0) {
+            ghostMeshes.forEach(m => (m.visible = false));
+            currentGhostSpecs = [];
+            return;
+        }
+
+        const hit = hits[0];
+        const hitPoint = hit.point.clone();
+
+        // Clamp build radius to tabletop
+        if (Math.hypot(hitPoint.x, hitPoint.z) > 11.5) {
+            ghostMeshes.forEach(m => (m.visible = false));
+            currentGhostSpecs = [];
+            return;
+        }
+
+        const yawRad = THREE.MathUtils.degToRad(state.yawDeg);
+        let specs = [];
+        let previewColor = '#38bdf8'; // Sky blue for A-frame
+
+        // Determine active placement geometry
+        if (state.tool === 'smart') {
+            // 1. Check if cursor is near two adjacent A-frame apexes -> Snap Bridge!
+            const bridgeCandidate = findBridgeSnapCandidate(hitPoint);
+            if (bridgeCandidate) {
+                specs = computeBridgeCard(bridgeCandidate.pos, bridgeCandidate.yawRad);
+                previewColor = '#34d399'; // Emerald green for Bridge snap
+            } else {
+                // 2. Otherwise snap an A-Frame on the table or on top of an existing bridge deck
+                const snapPos = snapToArchitecturalGrid(hitPoint, hit.object);
+                specs = computeAFrameCards(snapPos, yawRad);
+                previewColor = '#38bdf8';
+            }
+        } else if (state.tool === 'aframe') {
+            const snapPos = snapToArchitecturalGrid(hitPoint, hit.object);
+            specs = computeAFrameCards(snapPos, yawRad);
+            previewColor = '#38bdf8';
+        } else if (state.tool === 'bridge') {
+            const bridgeCandidate = findBridgeSnapCandidate(hitPoint);
+            if (bridgeCandidate) {
+                specs = computeBridgeCard(bridgeCandidate.pos, bridgeCandidate.yawRad);
+            } else {
+                specs = computeBridgeCard(hitPoint, yawRad);
+            }
+            previewColor = '#34d399';
+        } else if (state.tool === 'single') {
+            specs = computeSingleCard(hitPoint, yawRad, state.singleTiltDeg);
+            previewColor = '#fbbf24'; // Amber for single custom card
+        }
+
+        currentGhostSpecs = specs;
+        ghostMaterial.color.set(previewColor);
+
+        for (let i = 0; i < ghostMeshes.length; i++) {
+            if (i < specs.length) {
+                const s = specs[i];
+                ghostMeshes[i].visible = true;
+                ghostMeshes[i].position.set(s.pos.x, s.pos.y, s.pos.z);
+                ghostMeshes[i].quaternion.set(s.quat.x, s.quat.y, s.quat.z, s.quat.w);
+            } else {
+                ghostMeshes[i].visible = false;
+            }
+        }
+    }
+
+    function snapToArchitecturalGrid(point, hitObject) {
+        // If standing on a bridge card, snap neatly onto the bridge's top surface center
+        if (hitObject && hitObject.userData && hitObject.userData.type === 'bridge') {
+            const bridgeCenter = hitObject.position.clone();
+            bridgeCenter.y += CARD_THICKNESS / 2;
+            return bridgeCenter;
+        }
+        // Otherwise gentle 0.37-unit architectural grid snap on table so multi-bay pyramids align effortlessly
+        const step = BAY_SPACING / 2; // 0.74
+        return new THREE.Vector3(
+            Math.round(point.x / step) * step,
+            0,
+            Math.round(point.z / step) * step
+        );
+    }
+
+    // ============================================================================
+    // 8. UNDO / REDO & PRESET TEMPLATES
+    // ============================================================================
+    function pushUndoSnapshot() {
+        state.undoStack.push(JSON.stringify(state.cards));
+        if (state.undoStack.length > 40) state.undoStack.shift();
+        state.redoStack = [];
+    }
+
+    function placeCurrentGhost() {
+        if (state.mode !== 'build' || currentGhostSpecs.length === 0) return;
+
+        pushUndoSnapshot();
+
+        currentGhostSpecs.forEach((spec, idx) => {
+            const cardFace = getCardSpecFromUI();
+            state.cards.push({
+                id: 'card_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                type: spec.type,
+                suit: cardFace.suit,
+                rank: cardFace.rank,
+                backTheme: state.backTheme,
+                pos: { ...spec.pos },
+                quat: { ...spec.quat },
+                apex: spec.apex ? { ...spec.apex } : null,
+                yawRad: spec.yawRad || 0
+            });
+            setTimeout(() => sound.playCardSnap(idx * 0.4), idx * 45);
+        });
+
+        syncSceneFromCards();
+        updateGhostPreview();
+    }
+
+    function undo() {
+        if (state.mode !== 'build' || state.undoStack.length === 0) return;
+        state.redoStack.push(JSON.stringify(state.cards));
+        state.cards = JSON.parse(state.undoStack.pop());
+        sound.playCardSnap(-0.5);
+        syncSceneFromCards();
+        updateGhostPreview();
+    }
+
+    function redo() {
+        if (state.mode !== 'build' || state.redoStack.length === 0) return;
+        state.undoStack.push(JSON.stringify(state.cards));
+        state.cards = JSON.parse(state.redoStack.pop());
+        sound.playCardSnap(0.3);
+        syncSceneFromCards();
+        updateGhostPreview();
+    }
+
+    function buildPyramidPreset(stories) {
+        if (state.mode === 'physics') {
+            switchMode('build');
+        }
+        pushUndoSnapshot();
+        state.cards = [];
+
+        // Build row-aligned pyramid along Z axis (yaw = 0)
+        for (let level = 0; level < stories; level++) {
+            const baysInLevel = stories - level;
+            const yBase = level * (AFRAME_HEIGHT + CARD_THICKNESS);
+            const zStart = -((baysInLevel - 1) * BAY_SPACING) / 2;
+
+            // Place A-frames for this level
+            const apexPoints = [];
+            for (let b = 0; b < baysInLevel; b++) {
+                const zCenter = zStart + b * BAY_SPACING;
+                const center = new THREE.Vector3(0, yBase, zCenter);
+                const pair = computeAFrameCards(center, 0);
+                pair.forEach(spec => {
+                    const face = textureFactory.getRandomCardSpec();
+                    state.cards.push({
+                        id: `preset_${level}_${b}_${Math.random().toString(36).slice(2, 6)}`,
+                        type: spec.type,
+                        suit: face.suit,
+                        rank: face.rank,
+                        backTheme: state.backTheme,
+                        pos: spec.pos,
+                        quat: spec.quat,
+                        apex: spec.apex,
+                        yawRad: 0
+                    });
+                });
+                apexPoints.push(new THREE.Vector3(0, yBase + AFRAME_HEIGHT, zCenter));
+            }
+
+            // Place horizontal bridges connecting adjacent apexes on this level
+            for (let b = 0; b < apexPoints.length - 1; b++) {
+                const mid = new THREE.Vector3().addVectors(apexPoints[b], apexPoints[b + 1]).multiplyScalar(0.5);
+                const bridgeSpec = computeBridgeCard(mid, 0)[0];
+                const face = textureFactory.getRandomCardSpec();
+                state.cards.push({
+                    id: `preset_bridge_${level}_${b}_${Math.random().toString(36).slice(2, 6)}`,
+                    type: bridgeSpec.type,
+                    suit: face.suit,
+                    rank: face.rank,
+                    backTheme: state.backTheme,
+                    pos: bridgeSpec.pos,
+                    quat: bridgeSpec.quat,
+                    apex: null,
+                    yawRad: 0
+                });
+            }
+        }
+
+        sound.playCardSnap(0.5);
+        syncSceneFromCards();
+        controls.target.set(0, (stories * AFRAME_HEIGHT) * 0.42, 0);
+        showToast(`Built ${stories}-Story Pyramid (${state.cards.length} cards)`);
+    }
+
+    // ============================================================================
+    // 9. CANNON.JS RIGID-BODY PHYSICS & COLLAPSE SIMULATION
+    // ============================================================================
+    let world = null;
+    const physicsCardBodies = new Map(); // cardId -> CANNON.Body
+    const marbles = []; // { mesh, body }
+    const marbleGeo = new THREE.SphereGeometry(0.24, 24, 24);
+    const marbleMat = new THREE.MeshStandardMaterial({
+        color: '#38bdf8',
+        roughness: 0.12,
+        metalness: 0.75
+    });
+
+    function initPhysicsWorld() {
+        world = new CANNON.World();
+        world.gravity.set(0, -14.5, 0);
+        world.broadphase = new CANNON.NaiveBroadphase();
+        world.solver.iterations = 14;
+        world.allowSleep = true;
+
+        // Materials: cardstock has high static friction when balanced, low sliding friction once tipped
+        const tablePhysMat = new CANNON.Material('table');
+        const cardPhysMat = new CANNON.Material('card');
+
+        const cardTableContact = new CANNON.ContactMaterial(tablePhysMat, cardPhysMat, {
+            friction: 0.65,
+            restitution: 0.12
+        });
+        const cardCardContact = new CANNON.ContactMaterial(cardPhysMat, cardPhysMat, {
+            friction: 0.58,
+            restitution: 0.08
+        });
+        world.addContactMaterial(cardTableContact);
+        world.addContactMaterial(cardCardContact);
+
+        // Static Ground Plane
+        const groundBody = new CANNON.Body({ mass: 0, material: tablePhysMat });
+        groundBody.addShape(new CANNON.Plane());
+        groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+        world.addBody(groundBody);
+
+        // Create dynamic rigid body for every placed card
+        physicsCardBodies.clear();
+        const halfExtents = new CANNON.Vec3(CARD_WIDTH / 2, CARD_HEIGHT / 2, CARD_THICKNESS / 2);
+        const boxShape = new CANNON.Box(halfExtents);
+
+        let lastClatterTime = 0;
+
+        for (const card of state.cards) {
+            const body = new CANNON.Body({
+                mass: 0.12,
+                material: cardPhysMat,
+                linearDamping: 0.08,
+                angularDamping: 0.12
+            });
+            body.addShape(boxShape);
+            body.position.set(card.pos.x, card.pos.y, card.pos.z);
+            body.quaternion.set(card.quat.x, card.quat.y, card.quat.z, card.quat.w);
+
+            // Start asleep so the tower stands poised until disturbed!
+            body.sleepSpeedLimit = 0.25;
+            body.sleepTimeLimit = 0.4;
+            body.sleep();
+
+            body.addEventListener('collide', (e) => {
+                const relVel = e.contact.getImpactVelocityAlongNormal();
+                const now = performance.now();
+                if (Math.abs(relVel) > 1.4 && now - lastClatterTime > 45) {
+                    lastClatterTime = now;
+                    sound.playCardClatter(Math.min(1, Math.abs(relVel) / 8));
+                }
+            });
+
+            world.addBody(body);
+            physicsCardBodies.set(card.id, body);
+        }
+    }
+
+    function clearMarbles() {
+        for (const m of marbles) {
+            scene.remove(m.mesh);
+            if (world) world.removeBody(m.body);
+        }
+        marbles.length = 0;
+    }
+
+    function shootMarble() {
+        if (state.mode !== 'physics') {
+            switchMode('physics');
+        }
+        sound.playMarbleLaunch();
+
+        // Wake all card bodies so chain reaction propagates cleanly
+        for (const body of physicsCardBodies.values()) {
+            body.wakeUp();
+        }
+
+        const mesh = new THREE.Mesh(marbleGeo, marbleMat);
+        mesh.castShadow = true;
+        scene.add(mesh);
+
+        // Launch from camera toward orbit target
+        const dir = new THREE.Vector3().subVectors(controls.target, camera.position).normalize();
+        const spawnPos = camera.position.clone().addScaledVector(dir, 1.8);
+        spawnPos.y = Math.max(0.4, spawnPos.y);
+
+        const body = new CANNON.Body({
+            mass: 1.6,
+            shape: new CANNON.Sphere(0.24),
+            linearDamping: 0.05
+        });
+        body.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
+
+        const speed = 15.5;
+        body.velocity.set(dir.x * speed, dir.y * speed + 1.2, dir.z * speed);
+        world.addBody(body);
+
+        marbles.push({ mesh, body });
+        showToast('Marble launched!');
+    }
+
+    function triggerWindGust() {
+        if (state.mode !== 'physics') {
+            switchMode('physics');
+        }
+        sound.playWindGust();
+
+        // Directional breeze blowing across the table (+X and slight +Z)
+        const windDir = new CANNON.Vec3(1, 0.15, 0.25);
+        for (const body of physicsCardBodies.values()) {
+            body.wakeUp();
+            const heightFactor = Math.max(0.4, body.position.y * 0.65);
+            const jitter = 0.7 + Math.random() * 0.7;
+            const impulse = new CANNON.Vec3(
+                windDir.x * 0.55 * heightFactor * jitter,
+                windDir.y * 0.22 * jitter,
+                windDir.z * 0.55 * heightFactor * jitter
+            );
+            body.applyImpulse(impulse, new CANNON.Vec3(0, 0.3, 0));
+        }
+        showToast('WHOOSH! Gust of wind swept across the table!');
+    }
+
+    function yankCardAtPointer() {
+        if (state.mode !== 'physics') return;
+        raycaster.setFromCamera(pointerNDC, camera);
+        const meshes = Array.from(cardMeshes.values());
+        const hits = raycaster.intersectObjects(meshes, false);
+        if (hits.length > 0) {
+            const hitMesh = hits[0].object;
+            const cardId = hitMesh.userData.cardId;
+            const body = physicsCardBodies.get(cardId);
+            if (body) {
+                // Wake entire tower so gravity immediately collapses unsupported upper stories!
+                for (const b of physicsCardBodies.values()) {
+                    b.wakeUp();
+                }
+                // Yank the clicked card rapidly sideways out of the structure
+                const pullDir = new THREE.Vector3().subVectors(camera.position, hitMesh.position).normalize();
+                body.velocity.set(pullDir.x * 14, 2.5, pullDir.z * 14);
+                body.angularVelocity.set(Math.random() * 8, Math.random() * 8, Math.random() * 8);
+                sound.playCardSnap(0.8);
+                showToast('Card yanked out!');
+            }
+        }
+    }
+
+    function resetTowerToSnapshot() {
+        if (state.snapshotBeforePhysics) {
+            state.cards = JSON.parse(state.snapshotBeforePhysics);
+        }
+        clearMarbles();
+        syncSceneFromCards();
+        if (state.mode === 'physics') {
+            initPhysicsWorld();
+        }
+        sound.playCardSnap(0.2);
+        showToast('Tower restored to pristine state!');
+    }
+
+    // ============================================================================
+    // 10. MODE SWITCHING & UI CONTROLLERS
+    // ============================================================================
+    function switchMode(newMode) {
+        if (state.mode === newMode) return;
+        state.mode = newMode;
+
+        const btnBuild = document.getElementById('btn-mode-build');
+        const btnPhysics = document.getElementById('btn-mode-physics');
+        const toolbarBuild = document.getElementById('toolbar-build');
+        const toolbarPhysics = document.getElementById('toolbar-physics');
+        const subtitle = document.getElementById('mode-subtitle');
+
+        if (newMode === 'build') {
+            btnBuild.classList.add('btn-active');
+            btnBuild.classList.remove('text-slate-300');
+            btnPhysics.classList.remove('btn-physics-active');
+            btnPhysics.classList.add('text-slate-300');
+
+            toolbarBuild.classList.remove('hidden');
+            toolbarPhysics.classList.add('hidden');
+            subtitle.textContent = 'Architectural Snap Builder';
+
+            // Restore pre-collapse layout
+            if (state.snapshotBeforePhysics) {
+                state.cards = JSON.parse(state.snapshotBeforePhysics);
+                state.snapshotBeforePhysics = null;
+            }
+            clearMarbles();
+            world = null;
+            syncSceneFromCards();
+            updateGhostPreview();
+        } else {
+            if (state.cards.length === 0) {
+                showToast('Build or select a preset pyramid first!');
+                state.mode = 'build';
+                return;
+            }
+            btnPhysics.classList.add('btn-physics-active');
+            btnPhysics.classList.remove('text-slate-300');
+            btnBuild.classList.remove('btn-active');
+            btnBuild.classList.add('text-slate-300');
+
+            toolbarBuild.classList.add('hidden');
+            toolbarPhysics.classList.remove('hidden');
+            subtitle.textContent = 'Rigid-Body Physics & Demolition';
+
+            // Save pristine snapshot so user can rebuild endlessly
+            state.snapshotBeforePhysics = JSON.stringify(state.cards);
+            ghostMeshes.forEach(m => (m.visible = false));
+            initPhysicsWorld();
+            showToast('Physics Active! Flick a marble, blow wind, or click any card to yank it!');
+        }
+        updateTelemetry();
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+        const banner = document.getElementById('toast-banner');
+        document.getElementById('toast-text').textContent = msg;
+        banner.classList.remove('opacity-0');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            banner.classList.add('opacity-0');
+        }, 2600);
+    }
+
+    // Bind UI Event Listeners
+    document.getElementById('btn-mode-build').addEventListener('click', () => switchMode('build'));
+    document.getElementById('btn-mode-physics').addEventListener('click', () => switchMode('physics'));
+
+    document.getElementById('btn-undo').addEventListener('click', undo);
+    document.getElementById('btn-redo').addEventListener('click', redo);
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+        if (state.mode === 'physics') switchMode('build');
+        if (state.cards.length > 0) pushUndoSnapshot();
+        state.cards = [];
+        syncSceneFromCards();
+        updateGhostPreview();
+        showToast('Table cleared');
+    });
+
+    document.getElementById('btn-table-theme').addEventListener('click', () => {
+        state.tableTheme = state.tableTheme === 'felt' ? 'wood' : 'felt';
+        tableMesh.material = createTableMaterial(state.tableTheme);
+        showToast(state.tableTheme === 'felt' ? 'Table: Tournament Emerald Felt' : 'Table: Classic Walnut Wood');
+    });
+
+    document.getElementById('btn-mute').addEventListener('click', () => {
+        const muted = sound.toggleMute();
+        const icon = document.getElementById('icon-mute');
+        icon.className = muted ? 'fa-solid fa-volume-xmark text-rose-400' : 'fa-solid fa-volume-high';
+        showToast(muted ? 'Sound Muted' : 'Sound Enabled');
+    });
+
+    // Preset Buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const stories = parseInt(btn.dataset.preset, 10);
+            buildPyramidPreset(stories);
+        });
+    });
+
+    // Tool Buttons
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tool-btn').forEach(b => {
+                b.classList.remove('btn-active');
+                b.classList.add('bg-white/5');
+            });
+            btn.classList.add('btn-active');
+            btn.classList.remove('bg-white/5');
+            state.tool = btn.dataset.tool;
+
+            const tiltCtrl = document.getElementById('single-tilt-control');
+            if (state.tool === 'single') {
+                tiltCtrl.classList.remove('hidden');
+                tiltCtrl.classList.add('flex');
+            } else {
+                tiltCtrl.classList.add('hidden');
+                tiltCtrl.classList.remove('flex');
+            }
+            updateGhostPreview();
+        });
+    });
+
+    // Rotate Orientation
+    function rotatePlacement() {
+        state.yawDeg = (state.yawDeg + 90) % 360;
+        document.getElementById('label-angle').textContent = `${state.yawDeg}°`;
+        sound.playCardSnap(0.15);
+        updateGhostPreview();
+    }
+    document.getElementById('btn-rotate').addEventListener('click', rotatePlacement);
+
+    // Single Card Tilt Slider
+    document.getElementById('input-tilt').addEventListener('input', (e) => {
+        state.singleTiltDeg = parseInt(e.target.value, 10);
+        document.getElementById('label-tilt').textContent = `${state.singleTiltDeg}°`;
+        updateGhostPreview();
+    });
+
+    // Deck Selectors
+    const selectSuit = document.getElementById('select-suit');
+    const selectRank = document.getElementById('select-rank');
+    selectSuit.addEventListener('change', (e) => {
+        state.suitChoice = e.target.value;
+        selectRank.disabled = state.suitChoice === 'RANDOM';
+    });
+    selectRank.addEventListener('change', (e) => {
+        state.rankChoice = e.target.value;
+    });
+
+    // Back Theme Buttons
+    document.querySelectorAll('.back-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.back-btn').forEach(b => b.classList.remove('ring-2', 'ring-amber-400'));
+            btn.classList.add('ring-2', 'ring-amber-400');
+            state.backTheme = btn.dataset.back;
+        });
+    });
+
+    // Physics Toolbar Buttons
+    document.getElementById('btn-shoot-marble').addEventListener('click', shootMarble);
+    document.getElementById('btn-wind-gust').addEventListener('click', triggerWindGust);
+    document.getElementById('btn-reset-tower').addEventListener('click', resetTowerToSnapshot);
+    document.getElementById('btn-pull-card-mode').addEventListener('click', () => {
+        showToast('Click directly on any card in the tower to pull it out!');
+    });
+
+    // ============================================================================
+    // 11. POINTER & KEYBOARD INPUT HANDLING (DISTINGUISHING ORBIT DRAG VS CLICK)
+    // ============================================================================
+    let pointerDownPos = { x: 0, y: 0 };
+
+    renderer.domElement.addEventListener('pointermove', (e) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointerNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        updateGhostPreview();
+    });
+
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+        pointerDownPos = { x: e.clientX, y: e.clientY };
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointerNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    });
+
+    renderer.domElement.addEventListener('pointerup', (e) => {
+        // Only trigger placement or yank on primary left-click / tap without camera drag
+        if (e.button !== 0 && e.pointerType === 'mouse') return;
+        const moveDist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+        if (moveDist > 6) return; // User was orbiting camera
+
+        if (state.mode === 'build') {
+            updateGhostPreview();
+            placeCurrentGhost();
+        } else if (state.mode === 'physics') {
+            yankCardAtPointer();
+        }
+    });
+
+    window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+
+        if (e.key === 'r' || e.key === 'R') {
+            rotatePlacement();
+        } else if (e.code === 'Space') {
+            e.preventDefault();
+            shootMarble();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            if (e.shiftKey) redo();
+            else undo();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+            e.preventDefault();
+            redo();
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ============================================================================
+    // 12. MAIN ANIMATION LOOP
+    // ============================================================================
+    const clock = new THREE.Clock();
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        const dt = Math.min(clock.getDelta(), 0.05);
+        const now = performance.now();
+
+        if (state.mode === 'build') {
+            // Subtle tactile settling wobble for newly placed cards
+            for (const mesh of cardMeshes.values()) {
+                const age = (now - mesh.userData.spawnTime) / 1000;
+                if (age < 0.45 && mesh.userData.baseQuat) {
+                    const wobble = Math.sin(age * 36) * Math.exp(-age * 9) * 0.028;
+                    const qWobble = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), wobble);
+                    mesh.quaternion.copy(mesh.userData.baseQuat).multiply(qWobble);
+                } else if (mesh.userData.baseQuat) {
+                    mesh.quaternion.copy(mesh.userData.baseQuat);
+                }
+            }
+        } else if (state.mode === 'physics' && world) {
+            // Step Cannon.js rigid-body physics
+            world.step(1 / 60, dt, 4);
+
+            for (const [cardId, body] of physicsCardBodies.entries()) {
+                const mesh = cardMeshes.get(cardId);
+                if (mesh) {
+                    mesh.position.set(body.position.x, body.position.y, body.position.z);
+                    mesh.quaternion.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+                }
+            }
+
+            for (const m of marbles) {
+                m.mesh.position.set(m.body.position.x, m.body.position.y, m.body.position.z);
+                m.mesh.quaternion.set(m.body.quaternion.x, m.body.quaternion.y, m.body.quaternion.z, m.body.quaternion.w);
+            }
+        }
+
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    // Initialize with a classic 3-Story Pyramid on load so the table looks inviting immediately
+    window.onload = function () {
+        buildPyramidPreset(3);
+        animate();
+    };
+    </script>
+</body>
+</html>
